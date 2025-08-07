@@ -14,3 +14,5 @@ uuid = { version = "1", features = ["v4"] }     # Generate unique classroom/user
 futures = "0.3"            # Required for async processing
 mime_guess = "2.0"         # For guessing content type (e.g., video stream)
 actix-files = "0.6"        # For serving static HTML/CSS
+axum = "0.7"
+tower = "0.4" #Middleware utilities used by Axum.
