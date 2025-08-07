@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
-use tokio_tungstenite::{accept_async, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt};
 use warp::Filter;
 use serde::{Deserialize, Serialize};
@@ -32,7 +31,7 @@ pub enum ClientMessage {
     WebRTCSignal { target_user: String, signal: serde_json::Value },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
     RoomJoined { room_name: String, users: Vec<User>, streamer: Option<String> },
@@ -92,7 +91,7 @@ async fn handle_connection(
     tokio::spawn(async move {
         while let Some(message) = rx.recv().await {
             let json = serde_json::to_string(&message).unwrap();
-            if ws_sender.send(Message::text(json)).await.is_err() {
+            if ws_sender.send(warp::ws::Message::text(json)).await.is_err() {
                 break;
             }
         }
@@ -112,14 +111,16 @@ async fn handle_connection(
             Err(_) => break,
         };
 
-        if let Ok(text) = msg.to_text() {
-            if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(text) {
-                handle_client_message(
-                    client_msg,
-                    &mut current_user,
-                    &rooms,
-                    &connections,
-                ).await;
+        if msg.is_text() {
+            if let Ok(text) = msg.to_str() {
+                if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(text) {
+                    handle_client_message(
+                        client_msg,
+                        &mut current_user,
+                        &rooms,
+                        &connections,
+                    ).await;
+                }
             }
         }
     }
@@ -142,51 +143,76 @@ async fn handle_client_message(
             }
 
             // Join new room
-            let mut rooms_guard = rooms.lock().await;
-            let room = rooms_guard.entry(room_name.clone()).or_insert_with(|| Room {
-                name: room_name.clone(),
-                users: HashMap::new(),
-                streamer: None,
-            });
-
-            user.room = Some(room_name.clone());
-            room.users.insert(user.id.clone(), user.clone());
-
-            // Notify user
-            let users: Vec<User> = room.users.values().cloned().collect();
-            let streamer = room.streamer.clone();
-            
-            if let Some(tx) = connections.lock().await.get(&user.id) {
-                let _ = tx.send(ServerMessage::RoomJoined { 
-                    room_name: room_name.clone(), 
-                    users, 
-                    streamer 
+            {
+                let mut rooms_guard = rooms.lock().await;
+                let room = rooms_guard.entry(room_name.clone()).or_insert_with(|| Room {
+                    name: room_name.clone(),
+                    users: HashMap::new(),
+                    streamer: None,
                 });
+
+                user.room = Some(room_name.clone());
+                room.users.insert(user.id.clone(), user.clone());
+
+                // Notify user about successful room join
+                let users: Vec<User> = room.users.values().cloned().collect();
+                let streamer = room.streamer.clone();
+                
+                if let Some(tx) = connections.lock().await.get(&user.id) {
+                    let _ = tx.send(ServerMessage::RoomJoined { 
+                        room_name: room_name.clone(), 
+                        users, 
+                        streamer 
+                    });
+                }
             }
 
-            // Notify others in room
+            // Notify others in room (after releasing the lock)
             broadcast_to_room(&room_name, &user.id, ServerMessage::UserJoined { user: user.clone() }, rooms, connections).await;
         },
         
         ClientMessage::StartStream => {
             if let Some(room_name) = &user.room {
-                let mut rooms_guard = rooms.lock().await;
-                if let Some(room) = rooms_guard.get_mut(room_name) {
-                    // Stop current streamer if any
-                    if let Some(current_streamer) = &room.streamer {
-                        if let Some(streamer_user) = room.users.get_mut(current_streamer) {
-                            streamer_user.is_streaming = false;
+                let room_name_clone = room_name.clone();
+                
+                {
+                    let mut rooms_guard = rooms.lock().await;
+                    if let Some(room) = rooms_guard.get_mut(&room_name_clone) {
+                        // Stop current streamer if any
+                        if let Some(current_streamer) = &room.streamer {
+                            if let Some(streamer_user) = room.users.get_mut(current_streamer) {
+                                streamer_user.is_streaming = false;
+                            }
+                        }
+                        
+                        // Set new streamer
+                        room.streamer = Some(user.id.clone());
+                        user.is_streaming = true;
+                        room.users.insert(user.id.clone(), user.clone());
+                    }
+                }
+
+                // Notify all users in room (including the streamer)
+                broadcast_to_room(&room_name_clone, "", ServerMessage::StreamStarted { user_id: user.id.clone() }, rooms, connections).await;
+            }
+        },
+
+        ClientMessage::StopStream => {
+            if let Some(room_name) = &user.room {
+                let room_name_clone = room_name.clone();
+                
+                {
+                    let mut rooms_guard = rooms.lock().await;
+                    if let Some(room) = rooms_guard.get_mut(&room_name_clone) {
+                        if room.streamer.as_ref() == Some(&user.id) {
+                            room.streamer = None;
+                            user.is_streaming = false;
+                            room.users.insert(user.id.clone(), user.clone());
                         }
                     }
-                    
-                    // Set new streamer
-                    room.streamer = Some(user.id.clone());
-                    user.is_streaming = true;
-                    room.users.insert(user.id.clone(), user.clone());
-
-                    // Notify all users in room
-                    broadcast_to_room(room_name, "", ServerMessage::StreamStarted { user_id: user.id.clone() }, rooms, connections).await;
                 }
+                
+                broadcast_to_room(&room_name_clone, "", ServerMessage::StreamStopped { user_id: user.id.clone() }, rooms, connections).await;
             }
         },
 
@@ -208,27 +234,43 @@ async fn handle_client_message(
             }
         },
 
-        _ => {} // Handle other messages
+        ClientMessage::LeaveRoom => {
+            leave_room(user, rooms, connections).await;
+        }
     }
 }
 
 async fn leave_room(user: &mut User, rooms: &Rooms, connections: &Connections) {
     if let Some(room_name) = &user.room {
-        let mut rooms_guard = rooms.lock().await;
-        if let Some(room) = rooms_guard.get_mut(room_name) {
-            room.users.remove(&user.id);
-            
-            if room.streamer.as_ref() == Some(&user.id) {
-                room.streamer = None;
-                broadcast_to_room(room_name, "", ServerMessage::StreamStopped { user_id: user.id.clone() }, rooms, connections).await;
+        let room_name_clone = room_name.clone();
+        let mut should_remove_room = false;
+        
+        {
+            let mut rooms_guard = rooms.lock().await;
+            if let Some(room) = rooms_guard.get_mut(&room_name_clone) {
+                room.users.remove(&user.id);
+                
+                if room.streamer.as_ref() == Some(&user.id) {
+                    room.streamer = None;
+                }
+
+                should_remove_room = room.users.is_empty();
             }
-
-            broadcast_to_room(room_name, &user.id, ServerMessage::UserLeft { user_id: user.id.clone() }, rooms, connections).await;
-
-            if room.users.is_empty() {
-                rooms_guard.remove(room_name);
+            
+            if should_remove_room {
+                rooms_guard.remove(&room_name_clone);
             }
         }
+
+        // Notify others after releasing the lock
+        if room_name_clone == user.room.as_ref().unwrap() {
+            broadcast_to_room(&room_name_clone, &user.id, ServerMessage::UserLeft { user_id: user.id.clone() }, rooms, connections).await;
+            
+            if user.is_streaming {
+                broadcast_to_room(&room_name_clone, "", ServerMessage::StreamStopped { user_id: user.id.clone() }, rooms, connections).await;
+            }
+        }
+        
         user.room = None;
         user.is_streaming = false;
     }
@@ -247,15 +289,20 @@ async fn broadcast_to_room(
     rooms: &Rooms,
     connections: &Connections,
 ) {
-    let rooms_guard = rooms.lock().await;
-    if let Some(room) = rooms_guard.get(room_name) {
-        let connections_guard = connections.lock().await;
-        
-        for user_id in room.users.keys() {
-            if user_id != except_user {
-                if let Some(tx) = connections_guard.get(user_id) {
-                    let _ = tx.send(message.clone());
-                }
+    let user_ids = {
+        let rooms_guard = rooms.lock().await;
+        if let Some(room) = rooms_guard.get(room_name) {
+            room.users.keys().cloned().collect::<Vec<String>>()
+        } else {
+            return;
+        }
+    };
+
+    let connections_guard = connections.lock().await;
+    for user_id in user_ids {
+        if user_id != except_user {
+            if let Some(tx) = connections_guard.get(&user_id) {
+                let _ = tx.send(message.clone());
             }
         }
     }
