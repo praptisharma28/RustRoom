@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustRoom - Connect Your Classroom</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2rem;
+            max-width: 1200px;
+            width: 90%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .logo {
+            font-size: 3rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 1rem;
+        }
+        
+        .join-section {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+        
+        .room-input {
+            padding: 1rem 1.5rem;
+            border: none;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            font-size: 1.1rem;
+            min-width: 200px;
+            backdrop-filter: blur(5px);
+        }
+        
+        .room-input::placeholder { color: rgba(255, 255, 255, 0.7); }
+        .room-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3); }
+        
+        .btn {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            color: white;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .room-interface {
+            display: none;
+            grid-template-columns: 1fr 300px;
+            gap: 2rem;
+            height: 500px;
+        }
+        
+        .video-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .video-container {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #remoteVideo, #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 15px;
+        }
+        
+        #localVideo {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 150px;
+            height: 100px;
+            z-index: 10;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .no-stream {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        
+        .video-controls {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+        
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .users-list {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 1rem;
+            flex: 1;
+        }
+        
+        .users-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #4ecdc4;
+        }
+        
+        .user-item {
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .streaming-indicator {
+            width: 8px;
+            height: 8px;
+            background: #ff6b6b;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .chat-section {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            height: 200px;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            padding-right: 0.5rem;
+        }
+        
+        .chat-message {
+            margin-bottom: 0.5rem;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .chat-input {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .chat-input input {
+            flex: 1;
+            padding: 0.5rem;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        
+        .chat-input input::placeholder { color: rgba(255, 255, 255, 0.7); }
+        
+        .chat-input button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 10px;
+            background: #4ecdc4;
+            color: white;
+            cursor: pointer;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            font-weight: 600;
+        }
+        
+        .status.connected { background: rgba(76, 175, 80, 0.3); }
+        .status.disconnected { background: rgba(244, 67, 54, 0.3); }
+        
+        @media (max-width: 768px) {
+            .room-interface {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+            
+            .join-section {
+                flex-direction: column;
+            }
+            
+            .room-input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">RustRoom</div>
+            <div class="subtitle">Connect with your classroom • Share knowledge • Stream live</div>
+        </div>
+        
+        <div id="joinSection" class="join-section">
+            <input type="text" id="roomInput" class="room-input" placeholder="Enter class name (e.g., AIML3B, CSE2A)" maxlength="20">
+            <button id="joinBtn" class="btn btn-primary">Join Room</button>
+        </div>
+        
+        <div id="status" class="status disconnected">
+            Disconnected - Enter a room name to connect
+        </div>
+        
+        <div id="roomInterface" class="room-interface">
+            <div class="video-section">
+                <div class="video-container">
+                    <video id="remoteVideo" autoplay playsinline></video>
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div id="noStream" class="no-stream">No active stream • Click "Start Streaming" to share your camera</div>
+                </div>
+                <div class="video-controls">
+                    <button id="startStreamBtn" class="btn btn-secondary">Start Streaming</button>
+                    <button id="stopStreamBtn" class="btn btn-secondary" style="display: none;">Stop Streaming</button>
+                    <button id="leaveBtn" class="btn btn-primary">Leave Room</button>
+                </div>
+            </div>
+            
+            <div class="sidebar">
+                <div class="users-list">
+                    <div class="users-title">Connected Users</div>
+                    <div id="usersList"></div>
+                </div>
+                
+                <div class="chat-section">
+                    <div class="users-title">Chat</div>
+                    <div id="chatMessages" class="chat-messages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chatInput" placeholder="Type a message...">
+                        <button id="sendChatBtn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class RustRoom {
+            constructor() {
+                this.ws = null;
+                this.localStream = null;
+                this.remoteStream = null;
+                this.currentRoom = null;
+                this.isStreaming = false;
+                this.users = new Map();
+                this.webrtc = new WebRTCManager(this);
+                
+                this.setupEventListeners();
+                this.connect();
+            }
+            
+            setupEventListeners() {
+                document.getElementById('joinBtn').addEventListener('click', () => this.joinRoom());
+                document.getElementById('leaveBtn').addEventListener('click', () => this.leaveRoom());
+                document.getElementById('startStreamBtn').addEventListener('click', () => this.startStreaming());
+                document.getElementById('stopStreamBtn').addEventListener('click', () => this.stopStreaming());
+                document.getElementById('sendChatBtn').addEventListener('click', () => this.sendChat());
+                
+                document.getElementById('roomInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.joinRoom();
+                });
+                
+                document.getElementById('chatInput').addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendChat();
+                });
+            }
+            
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+                
+                this.ws.onopen = () => {
+                    console.log('Connected to server');
+                    this.updateStatus('Connected to server', 'connected');
+                };
+                
+                this.ws.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    this.handleServerMessage(message);
+                };
+                
+                this.ws.onclose = () => {
+                    console.log('Disconnected from server');
+                    this.updateStatus('Disconnected from server', 'disconnected');
+                    setTimeout(() => this.connect(), 3000);
+                };
+                
+                this.ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateStatus('Connection error', 'disconnected');
+                };
+            }
+            
+            joinRoom() {
+                const roomName = document.getElementById('roomInput').value.trim().toUpperCase();
+                if (!roomName) return;
+                
+                this.currentRoom = roomName;
+                this.send({ type: 'JoinRoom', room_name: roomName });
+                
+                document.getElementById('joinSection').style.display = 'none';
+                document.getElementById('roomInterface').style.display = 'grid';
+            }
+            
+            leaveRoom() {
+                this.send({ type: 'LeaveRoom' });
+                this.cleanup();
+                
+                document.getElementById('joinSection').style.display = 'flex';
+                document.getElementById('roomInterface').style.display = 'none';
+                this.updateStatus('Left room', 'connected');
+            }
+            
+            async startStreaming() {
+                try {
+                    this.localStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: true, 
+                        audio: true 
+                    });
+                    
+                    document.getElementById('localVideo').srcObject = this.localStream;
+                    document.getElementById('startStreamBtn').style.display = 'none';
+                    document.getElementById('stopStreamBtn').style.display = 'inline-block';
+                    
+                    this.send({ type: 'StartStream' });
+                    this.isStreaming = true;
+                    
+                } catch (error) {
+                    console.error('Error accessing camera:', error);
+                    alert('Could not access camera. Please check permissions.');
+                }
+            }
+            
+            stopStreaming() {
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                
+                document.getElementById('localVideo').srcObject = null;
+                document.getElementById('startStreamBtn').style.display = 'inline-block';
+                document.getElementById('stopStreamBtn').style.display = 'none';
+                
+                this.send({ type: 'StopStream' });
+                this.isStreaming = false;
+            }
+            
+            sendChat() {
+                const input = document.getElementById('chatInput');
+                const content = input.value.trim();
+                if (!content) return;
+                
+                this.send({ type: 'ChatMessage', content });
+                input.value = '';
+            }
+            
+            handleServerMessage(message) {
+                console.log('Received:', message);
+                
+                switch (message.type) {
+                    case 'RoomJoined':
+                        this.updateStatus(`Joined room: ${message.room_name}`, 'connected');
+                        this.updateUsersList(message.users);
+                        if (message.streamer) {
+                            this.showRemoteStream(message.streamer);
+                        }
+                        break;
+                        
+                    case 'UserJoined':
+                        this.users.set(message.user.id, message.user);
+                        this.updateUsersList(Array.from(this.users.values()));
+                        this.addChatMessage('System', `${message.user.id.slice(0, 8)} joined`);
+                        break;
+                        
+                    case 'UserLeft':
+                        this.users.delete(message.user_id);
+                        this.updateUsersList(Array.from(this.users.values()));
+                        this.addChatMessage('System', `${message.user_id.slice(0, 8)} left`);
+                        break;
+                        
+                    case 'StreamStarted':
+                        this.showRemoteStream(message.user_id);
+                        this.addChatMessage('System', `${message.user_id.slice(0, 8)} started streaming`);
+                        // Connect to the new streamer via WebRTC
+                        setTimeout(() => {
+                            this.webrtc.connectToStreamer(message.user_id);
+                        }, 1000);
+                        break;
+                        
+                    case 'StreamStopped':
+                        this.hideRemoteStream();
+                        this.addChatMessage('System', `Stream stopped`);
+                        break;
+                        
+                    case 'ChatMessage':
+                        this.addChatMessage(message.user_id.slice(0, 8), message.content);
+                        break;
+                        
+                    case 'WebRTCSignal':
+                        this.webrtc.handleSignal(message.from_user, message.signal);
+                        break;
+                }
+            }
+            
+            showRemoteStream(streamerId) {
+                document.getElementById('noStream').style.display = 'none';
+                document.getElementById('remoteVideo').style.display = 'block';
+                // In a real implementation, this would establish WebRTC connection
+            }
+            
+            hideRemoteStream() {
+                document.getElementById('noStream').style.display = 'flex';
+                document.getElementById('remoteVideo').style.display = 'none';
+                document.getElementById('remoteVideo').srcObject = null;
+            }
+            
+            hideNoStreamMessage() {
+                document.getElementById('noStream').style.display = 'none';
+                document.getElementById('remoteVideo').style.display = 'block';
+            }
+            
+            updateUsersList(users) {
+                const usersList = document.getElementById('usersList');
+                usersList.innerHTML = '';
+                
+                users.forEach(user => {
+                    const userElement = document.createElement('div');
+                    userElement.className = 'user-item';
+                    userElement.innerHTML = `
+                        ${user.is_streaming ? '<div class="streaming-indicator"></div>' : ''}
+                        <span>${user.id.slice(0, 12)}${user.is_streaming ? ' (streaming)' : ''}</span>
+                    `;
+                    usersList.appendChild(userElement);
+                    this.users.set(user.id, user);
+                });
+            }
+            
+            addChatMessage(sender, content) {
+                const chatMessages = document.getElementById('chatMessages');
+                const messageElement = document.createElement('div');
+                messageElement.className = 'chat-message';
+                messageElement.innerHTML = `<strong>${sender}:</strong> ${content}`;
+                chatMessages.appendChild(messageElement);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            updateStatus(message, type) {
+                const status = document.getElementById('status');
+                status.textContent = message;
+                status.className = `status ${type}`;
+            }
+            
+            send(message) {
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(JSON.stringify(message));
+                }
+            }
+            
+            cleanup() {
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                this.webrtc.cleanup();
+                this.currentRoom = null;
+                this.isStreaming = false;
+                this.users.clear();
+                document.getElementById('usersList').innerHTML = '';
+                document.getElementById('chatMessages').innerHTML = '';
+                this.hideRemoteStream();
+            }
+        }
+        
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', () => {
+            new RustRoom();
+        });
+    </script>
+    <script src="webrtc.js"></script>
+</body>
+</html>
